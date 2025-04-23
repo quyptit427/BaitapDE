@@ -1,0 +1,168 @@
+#!/bin/bash
+
+# Giả sử dữ liệu được lưu trong file tmdb-movies.csv
+input_file="tmdb-movies.csv"
+mkdir -p solution
+
+# 1. Sắp xếp các bộ phim theo ngày phát hành giảm dần
+echo "Đang thực hiện yêu cầu 1: Sắp xếp theo ngày phát hành..."
+head -1 "$input_file" > "solution/1-date-sorted-tmdb-movies.csv"
+tail -n +2 "$input_file" | sort -t, -k16 -r >> "solution/1-date-sorted-tmdb-movies.csv"
+
+# 2. Lọc ra các bộ phim có đánh giá trung bình trên 7.5
+echo "Đang thực hiện yêu cầu 2: Lọc theo đánh giá..."
+python3 -c "
+import csv
+with open('$input_file', 'r', encoding='utf-8') as infile, open('solution/2-rating-filtered-tmdb-movies.csv', 'w', encoding='utf-8') as outfile:
+    reader = csv.reader(infile)
+    writer = csv.writer(outfile)
+    header = next(reader)
+    writer.writerow(header)
+    vote_avg_idx = header.index('vote_average')
+    for row in reader:
+        try:
+            if float(row[vote_avg_idx]) > 7.5:
+                writer.writerow(row)
+        except (ValueError, IndexError):
+            continue
+"
+
+# 3. Tìm phim có doanh thu cao nhất và thấp nhất
+echo "Đang thực hiện yêu cầu 3: Tìm doanh thu cao nhất và thấp nhất..."
+python3 -c "
+import csv
+with open('$input_file', 'r', encoding='utf-8') as infile:
+    reader = csv.reader(infile)
+    header = next(reader)
+    revenue_idx = header.index('revenue')
+    title_idx = header.index('original_title')
+    
+    max_revenue = -1
+    min_revenue = float('inf')
+    max_title = ''
+    min_title = ''
+    
+    for row in reader:
+        try:
+            revenue = float(row[revenue_idx])
+            if revenue > max_revenue:
+                max_revenue = revenue
+                max_title = row[title_idx]
+            if revenue < min_revenue and revenue > 0:  # Bỏ qua các revenue = 0
+                min_revenue = revenue
+                min_title = row[title_idx]
+        except (ValueError, IndexError):
+            continue
+    
+    print(f'Phim có doanh thu cao nhất: {max_title} ({max_revenue})')
+    print(f'Phim có doanh thu thấp nhất: {min_title} ({min_revenue})')
+" > "solution/3-revenue-extremes.txt"
+
+# 4. Tính tổng doanh thu tất cả các bộ phim
+echo "Đang thực hiện yêu cầu 4: Tính tổng doanh thu..."
+python3 -c "
+import csv
+with open('$input_file', 'r', encoding='utf-8') as infile:
+    reader = csv.reader(infile)
+    header = next(reader)
+    revenue_idx = header.index('revenue')
+    
+    total_revenue = 0
+    for row in reader:
+        try:
+            revenue = float(row[revenue_idx])
+            total_revenue += revenue
+        except (ValueError, IndexError):
+            continue
+    
+    print(f'Tổng doanh thu: {total_revenue}')
+" > "solution/4-total-revenue.txt"
+
+# 5. Top 10 bộ phim đem về lợi nhuận cao nhất
+echo "Đang thực hiện yêu cầu 5: Top 10 phim lợi nhuận cao nhất..."
+python3 -c "
+import csv
+with open('$input_file', 'r', encoding='utf-8') as infile, open('solution/5-top-profitable-movies.csv', 'w', encoding='utf-8') as outfile:
+    reader = csv.reader(infile)
+    writer = csv.writer(outfile)
+    
+    header = next(reader)
+    revenue_idx = header.index('revenue')
+    budget_idx = header.index('budget')
+    title_idx = header.index('original_title')
+    
+    # Tạo header mới cho file output
+    writer.writerow(['original_title', 'profit', 'revenue', 'budget'])
+    
+    # Tính profit cho mỗi phim
+    profit_data = []
+    for row in reader:
+        try:
+            revenue = float(row[revenue_idx])
+            budget = float(row[budget_idx])
+            profit = revenue - budget
+            profit_data.append([row[title_idx], profit, revenue, budget])
+        except (ValueError, IndexError):
+            continue
+    
+    # Sắp xếp theo profit giảm dần và lấy top 10
+    profit_data.sort(key=lambda x: x[1], reverse=True)
+    for i in range(min(10, len(profit_data))):
+        writer.writerow(profit_data[i])
+"
+
+# 6. Đạo diễn nào có nhiều bộ phim nhất và diễn viên nào đóng nhiều phim nhất
+echo "Đang thực hiện yêu cầu 6: Đạo diễn và diễn viên nhiều phim nhất..."
+python3 -c "
+import csv
+from collections import Counter
+
+with open('$input_file', 'r', encoding='utf-8') as infile:
+    reader = csv.reader(infile)
+    header = next(reader)
+    director_idx = header.index('director')
+    cast_idx = header.index('cast')
+    
+    directors = []
+    actors = []
+    for row in reader:
+        if row[director_idx]:
+            directors.append(row[director_idx])
+        if row[cast_idx]:
+            actors.extend(row[cast_idx].split('|'))
+    
+    director_count = Counter(directors)
+    actor_count = Counter(actors)
+    
+    top_director = director_count.most_common(1)[0]
+    top_actor = actor_count.most_common(1)[0]
+    
+    with open('solution/6-top-directors-actors.txt', 'w', encoding='utf-8') as outfile:
+        outfile.write(f'Đạo diễn có nhiều phim nhất: {top_director[0]} ({top_director[1]} phim)\\n')
+        outfile.write(f'Diễn viên đóng nhiều phim nhất: {top_actor[0]} ({top_actor[1]} phim)')
+"
+
+# 7. Thống kê số lượng phim theo các thể loại
+echo "Đang thực hiện yêu cầu 7: Thống kê số lượng phim theo thể loại..."
+python3 -c "
+import csv
+from collections import Counter
+
+with open('$input_file', 'r', encoding='utf-8') as infile, open('solution/7-genre-counts.csv', 'w', encoding='utf-8') as outfile:
+    reader = csv.reader(infile)
+    writer = csv.writer(outfile)
+    
+    header = next(reader)
+    genre_idx = header.index('genres')
+    
+    genres = []
+    for row in reader:
+        if row[genre_idx]:
+            genres.extend(row[genre_idx].split('|'))
+    
+    genre_count = Counter(genres)
+    
+    writer.writerow(['genre', 'count'])
+    for genre, count in genre_count.most_common():
+        writer.writerow([genre, count])
+"
